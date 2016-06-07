@@ -311,6 +311,7 @@ static void e2o_copy_elf_header(struct exe2obj *e2o)
     ehdr.e_machine = e2o->iinfo.ehdr.e_machine;
     ehdr.e_type = ET_REL;
     ehdr.e_flags = e2o->iinfo.ehdr.e_flags;
+    ehdr.e_version = EV_CURRENT;
     if (gelf_update_ehdr(e2o->eout, &ehdr) == 0)
         display_elf_error_and_exit();
 }

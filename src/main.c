@@ -497,7 +497,16 @@ static void e2o_write_out(struct exe2obj *e2o)
 int main(int argc, char **argv)
 {
     assert(elf_version(EV_CURRENT) != EV_NONE);
-    assert(e2o_openfiles(&exe2obj, argv[1], argv[2]) == 0);
+
+    if (strcmp(argv[1], "--prefix") == 0) {
+        prefix = (char *) malloc(strlen(argv[2]) + strlen("_") + 1);
+        assert(prefix);
+        prefix = strcpy(prefix, argv[2]);
+        prefix = strcat(prefix, "_");
+        assert(e2o_openfiles(&exe2obj, argv[3], argv[4]) == 0);
+    } else {
+        assert(e2o_openfiles(&exe2obj, argv[1], argv[2]) == 0);
+    }
     e2o_elf_begin(&exe2obj);
     e2o_gather_input_info(&exe2obj);
     e2o_copy_elf_header(&exe2obj);

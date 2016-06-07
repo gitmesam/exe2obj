@@ -1,14 +1,22 @@
-OBJS = src/main.o
+MFD := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+INSTALL = install
+STRIP = strip
+DESTDIR ?= /usr/bin
+
+OBJS = main.o
 CFLAGS = -g -O0
-CPPFLAGS = -I/tmp/libelf/usr/include
 
 all: exe2obj
 
 exe2obj: $(OBJS)
-	$(CC) $^ -L/tmp/libelf/usr/lib/x86_64-linux-gnu -lelf  -o $@
+	$(CC) $^ -lelf  -o $@ -static
 
-%.o: %.c
+%.o: $(MFD)/src/%.c
 	$(CC) $^ $(CPPFLAGS) $(CFLAGS) -c -o $@
+
+install:
+	$(INSTALL) exe2obj $(DESTDIR)
+	$(STRIP) $(DESTDIR)/exe2obj
 
 clean:
 	rm -f $(OBJS) exe2obj

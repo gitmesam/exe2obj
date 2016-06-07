@@ -4,7 +4,7 @@ STRIP = strip
 DESTDIR ?= /usr/bin
 
 OBJS = main.o
-CFLAGS = -g -O0
+CFLAGS = -g -O2
 
 all: exe2obj
 

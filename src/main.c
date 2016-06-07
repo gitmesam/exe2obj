@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+char *prefix = "impl_test_";
+
 struct exe2obj_input_info {
     GElf_Ehdr ehdr;
     Elf_Scn *section_to_copy[3];
@@ -41,6 +43,17 @@ static void display_elf_error_and_exit()
     fprintf(stderr, "%s [%d]\n", elf_errmsg(elf_error), elf_error);
 
     exit(-1);
+}
+
+static char *append_prefix(char *pre, char *name)
+{
+    char *res = (char *) malloc(strlen(pre) + strlen(name) + 1);
+
+    assert(res);
+    res = strcpy(res, pre);
+    res = strcat(res, name);
+
+    return res;
 }
 
 static int e2o_openfiles(struct exe2obj *e2o, char *in, char *out)
@@ -149,8 +162,9 @@ static void e2o_copy_symbol(struct exe2obj *e2o, GElf_Sym *sym, char *name)
 {
     uint32_t index;
     GElf_Sym s;
+    char *prefix_name = append_prefix(prefix, name);
 
-    s.st_name = e2o_add_name_in_symbol_table(e2o, name);
+    s.st_name = e2o_add_name_in_symbol_table(e2o, prefix_name);
     s.st_value = e2o_convert_symbol_address(e2o, sym->st_shndx, sym->st_value);
     s.st_size = sym->st_size;
     s.st_info = sym->st_info;
@@ -158,6 +172,7 @@ static void e2o_copy_symbol(struct exe2obj *e2o, GElf_Sym *sym, char *name)
     s.st_shndx = e2o_convert_symbol_index(e2o, sym->st_shndx);
 
     e2o_add_symbol(e2o, &s);
+    free(prefix_name);
 }
 
 static void e2o_elf_begin(struct exe2obj *e2o)
@@ -233,6 +248,7 @@ static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *i
         GElf_Shdr osh;
         Elf_Data *id;
         Elf_Data *od;
+        char *prefix_name;
 
         /* create header */
         if (gelf_getshdr(os, &osh) == NULL)
@@ -240,7 +256,14 @@ static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *i
         osh.sh_type = is->sh_type;
         osh.sh_flags = is->sh_flags;
         osh.sh_addralign = is->sh_addralign;
-        osh.sh_name = e2o_add_name_in_section_table(e2o, elf_strptr(e2o->ein, e2o->iinfo.ehdr.e_shstrndx, is->sh_name));
+        if (is->sh_flags & SHF_EXECINSTR)
+            prefix_name = append_prefix(prefix, "code");
+        else if (is->sh_flags & SHF_WRITE)
+            prefix_name = append_prefix(prefix, "data");
+        else
+            prefix_name = append_prefix(prefix, "rodata");
+        osh.sh_name = e2o_add_name_in_section_table(e2o, prefix_name);
+        free(prefix_name);
         /* copy data */
         if ((id = elf_getdata(i_scn, NULL)) == 0)
             display_elf_error_and_exit();
@@ -369,6 +392,46 @@ static void e2o_create_symbol_table(struct exe2obj *e2o)
     e2o_add_name_in_symbol_table(e2o, "");
 }
 
+static void e2o_add_symbols(struct exe2obj *e2o)
+{
+    int i;
+    GElf_Sym sym;
+
+    sym.st_name = 0;
+    sym.st_value = 0;
+    sym.st_size = 0;
+    sym.st_info = 0;
+    sym.st_other = 0;
+    sym.st_shndx = 0;
+    e2o_add_symbol(e2o, &sym);
+
+    for(i = 0; i < 3; i++) {
+        GElf_Shdr sh;
+        char *prefix_name;
+        Elf_Scn *s = elf_getscn(e2o->eout, e2o->oinfo.section_index[i]);
+
+        if (!s)
+            display_elf_error_and_exit();
+        if (!gelf_getshdr(s, &sh))
+            display_elf_error_and_exit();
+        if (sh.sh_flags & SHF_EXECINSTR)
+            prefix_name = append_prefix(prefix, "code");
+        else if (sh.sh_flags & SHF_WRITE)
+            prefix_name = append_prefix(prefix, "data");
+        else
+            prefix_name = append_prefix(prefix, "rodata");
+
+        sym.st_name = e2o_add_name_in_symbol_table(e2o, prefix_name);
+        sym.st_value = 0;
+        sym.st_size = 0;
+        sym.st_info = GELF_ST_INFO(STB_GLOBAL, STT_NOTYPE);
+        sym.st_other = 0;
+        sym.st_shndx = e2o->oinfo.section_index[i];
+        e2o_add_symbol(e2o, &sym);
+        free(prefix_name);
+    }
+}
+
 static void e2o_copy_symbols(struct exe2obj *e2o)
 {
     Elf_Scn *symtab_in;
@@ -441,6 +504,7 @@ int main(int argc, char **argv)
     e2o_create_section_symbol_table(&exe2obj);
     e2o_create_symbol_table(&exe2obj);
     e2o_copy_sections(&exe2obj);
+    e2o_add_symbols(&exe2obj);
     e2o_copy_symbols(&exe2obj);
 
     e2o_write_out(&exe2obj);

@@ -17,6 +17,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301 USA.
  */
+
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -25,8 +26,11 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <getopt.h>
+#include <string.h>
+#include <libgen.h>
 
-char *prefix = "impl_test_";
+#include "options.h"
 
 struct exe2obj_input_info {
     GElf_Ehdr ehdr;
@@ -183,7 +187,7 @@ static void e2o_copy_symbol(struct exe2obj *e2o, GElf_Sym *sym, char *name)
 {
     uint32_t index;
     GElf_Sym s;
-    char *prefix_name = append_prefix(prefix, name);
+    char *prefix_name = append_prefix(config.prefix, name);
 
     s.st_name = e2o_add_name_in_symbol_table(e2o, prefix_name);
     s.st_value = e2o_convert_symbol_address(e2o, sym->st_shndx, sym->st_value);
@@ -278,11 +282,11 @@ static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *i
         osh.sh_flags = is->sh_flags;
         osh.sh_addralign = is->sh_addralign;
         if (is->sh_flags & SHF_EXECINSTR)
-            prefix_name = append_prefix(prefix, "code");
+            prefix_name = append_prefix(config.prefix, "code");
         else if (is->sh_flags & SHF_WRITE)
-            prefix_name = append_prefix(prefix, "data");
+            prefix_name = append_prefix(config.prefix, "data");
         else
-            prefix_name = append_prefix(prefix, "rodata");
+            prefix_name = append_prefix(config.prefix, "rodata");
         osh.sh_name = e2o_add_name_in_section_table(e2o, prefix_name);
         free(prefix_name);
         /* copy data */
@@ -437,11 +441,11 @@ static void e2o_add_symbols(struct exe2obj *e2o)
         if (!gelf_getshdr(s, &sh))
             display_elf_error_and_exit();
         if (sh.sh_flags & SHF_EXECINSTR)
-            prefix_name = append_prefix(prefix, "code");
+            prefix_name = append_prefix(config.prefix, "code");
         else if (sh.sh_flags & SHF_WRITE)
-            prefix_name = append_prefix(prefix, "data");
+            prefix_name = append_prefix(config.prefix, "data");
         else
-            prefix_name = append_prefix(prefix, "rodata");
+            prefix_name = append_prefix(config.prefix, "rodata");
 
         sym.st_name = e2o_add_name_in_symbol_table(e2o, prefix_name);
         sym.st_value = 0;
@@ -516,19 +520,19 @@ static void e2o_write_out(struct exe2obj *e2o)
     }
 }
 
-int main(int argc, char **argv)
+static int main_options_parsed(int argc, char **argv)
 {
-    assert(elf_version(EV_CURRENT) != EV_NONE);
+    /* if no prefix is given we use a default prefix build on output name */
+    if (!config.prefix && argv[1]) {
+        char *bn = basename(strdup(argv[1]));
+        char *last_dot = rindex(bn, '.');
 
-    if (strcmp(argv[1], "--prefix") == 0) {
-        prefix = (char *) malloc(strlen(argv[2]) + strlen("_") + 1);
-        assert(prefix);
-        prefix = strcpy(prefix, argv[2]);
-        prefix = strcat(prefix, "_");
-        assert(e2o_openfiles(&exe2obj, argv[3], argv[4]) == 0);
-    } else {
-        assert(e2o_openfiles(&exe2obj, argv[1], argv[2]) == 0);
+        if (last_dot)
+            *last_dot = '\0';
+        config.prefix = strcat(bn, "_");
     }
+    assert(elf_version(EV_CURRENT) != EV_NONE);
+    assert(e2o_openfiles(&exe2obj, argv[0], argv[1]) == 0);
     e2o_elf_begin(&exe2obj);
     e2o_gather_input_info(&exe2obj);
     e2o_copy_elf_header(&exe2obj);
@@ -541,4 +545,12 @@ int main(int argc, char **argv)
     e2o_write_out(&exe2obj);
 
     return 0;
+}
+
+int main(int argc, char **argv)
+{
+    /* parse options */
+    parse_options(argc, argv);
+
+    return main_options_parsed(argc - optind, argv + optind);
 }

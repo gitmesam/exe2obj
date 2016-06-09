@@ -508,7 +508,7 @@ static void e2o_copy_symbols(struct exe2obj *e2o)
         if (gelf_getsym(d, i, &sym) == NULL)
             display_elf_error_and_exit();
 
-        if (GELF_ST_BIND(sym.st_info) == STB_GLOBAL)
+        if (GELF_ST_BIND(sym.st_info) == STB_GLOBAL && GELF_ST_TYPE(sym.st_info) != STT_NOTYPE)
             e2o_copy_symbol(e2o, &sym, elf_strptr(e2o->ein, strtab_idx, sym.st_name));
     }
 }

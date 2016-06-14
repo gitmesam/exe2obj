@@ -8,8 +8,8 @@ OBJS = main.o options.o
 CFLAGS = -g -O2
 
 # Versioning
-GIT_VERSION := $(shell cd ${MFD} && ${GIT} describe --abbrev=0)
-GIT_DESCRIBE := $(shell cd ${MFD} && ${GIT} describe --always --tags --long --abbrev=12 --dirty)
+VERSION ?= $(shell cd ${MFD} && ${GIT} describe --always --dirty --tags --long --abbrev=8)
+VERSION_MSG ?= "${VERSION} build on "`uname -n`" by "`whoami`
 
 all: exe2obj
 
@@ -17,7 +17,7 @@ exe2obj: $(OBJS)
 	$(CC) $^ -lelf  -o $@ -static
 
 %.o: $(MFD)/src/%.c
-	$(CC) $^ $(CPPFLAGS) $(CFLAGS) -c -o $@ -DGIT_VERSION=\"$(GIT_VERSION)\" -DGIT_DESCRIBE=\"$(GIT_DESCRIBE)\"
+	$(CC) $^ $(CPPFLAGS) $(CFLAGS) -c -o $@ -DGIT_VERSION="\"$(VERSION)\"" -DGIT_DESCRIBE="\"$(VERSION_MSG)\""
 
 install:
 	$(INSTALL) exe2obj $(DESTDIR)

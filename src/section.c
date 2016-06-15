@@ -72,19 +72,20 @@ void e2o_create_section_symbol_table(Elf *elf)
 void e2o_create_symbol_table(Elf *elf)
 {
     GElf_Shdr shdr;
+    size_t strtab_index;
+
+    /* create .strtab */
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_name = e2o_add_name_in_section_table(elf, ".strtab");
+    shdr.sh_type = SHT_STRTAB;
+    strtab_index = elf_ndxscn( e2o_create_section(elf, &shdr) );
 
     /* create .symtab */
     memset(&shdr, 0, sizeof(shdr));
     shdr.sh_name = e2o_add_name_in_section_table(elf, ".symtab");
     shdr.sh_type = SHT_SYMTAB;
     shdr.sh_entsize = gelf_fsize(elf, ELF_T_SYM, 1, EV_CURRENT);
-    shdr.sh_link = 3; /* FIXME: value of symtab */
-    e2o_create_section(elf, &shdr);
-
-    /* create .strtab */
-    memset(&shdr, 0, sizeof(shdr));
-    shdr.sh_name = e2o_add_name_in_section_table(elf, ".strtab");
-    shdr.sh_type = SHT_STRTAB;
+    shdr.sh_link = strtab_index;
     e2o_create_section(elf, &shdr);
 
     /* start to add symbol */

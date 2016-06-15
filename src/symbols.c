@@ -9,7 +9,7 @@ uint32_t e2o_add_name_in_symbol_table(Elf *elf, char *name)
     Elf_Scn *strtab;
     Elf_Data *d;
 
-    strtab = elf_getscn(elf, 3/*fixme*/);
+    strtab = elf_getscn(elf, 2/*fixme*/);
     if (strtab == NULL)
         display_elf_error_and_exit();
     d = elf_getdata(strtab, NULL);
@@ -36,7 +36,7 @@ void e2o_add_symbol(Elf *elf, GElf_Sym *sym)
     sym32.st_other = sym->st_other;
     sym32.st_shndx = sym->st_shndx;
 
-    symtab = elf_getscn(elf, 2/*fixme*/);
+    symtab = elf_getscn(elf, 3/*fixme*/);
     if (symtab == NULL)
         display_elf_error_and_exit();
     d = elf_getdata(symtab, NULL);

@@ -9,7 +9,7 @@ CFLAGS = -g -O2
 
 # Versioning
 VERSION ?= $(shell cd ${MFD} && ${GIT} describe --always --dirty --tags --long --abbrev=8)
-VERSION_MSG ?= "${VERSION} build on "`uname -n`" by "`whoami`
+VERSION_MSG ?= "${VERSION}"
 
 all: exe2obj
 

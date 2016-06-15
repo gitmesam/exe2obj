@@ -30,7 +30,10 @@
 #include <string.h>
 #include <libgen.h>
 
+#include "utils.h"
 #include "options.h"
+#include "symbols.h"
+#include "section.h"
 
 struct exe2obj_input_info {
     GElf_Ehdr ehdr;
@@ -54,33 +57,6 @@ struct exe2obj {
 
 struct exe2obj exe2obj;
 
-static void display_error_and_exit(char *msg)
-{
-    fprintf(stderr, "%s\n", msg);
-
-    exit(-1);
-}
-
-static void display_elf_error_and_exit()
-{
-    int elf_error = elf_errno();
-
-    fprintf(stderr, "%s [%d]\n", elf_errmsg(elf_error), elf_error);
-
-    exit(-1);
-}
-
-static char *append_prefix(char *pre, char *name)
-{
-    char *res = (char *) malloc(strlen(pre) + strlen(name) + 1);
-
-    assert(res);
-    res = strcpy(res, pre);
-    res = strcat(res, name);
-
-    return res;
-}
-
 static int e2o_openfiles(struct exe2obj *e2o, char *in, char *out)
 {
     e2o->fin = open(in, O_RDONLY);
@@ -92,71 +68,6 @@ static int e2o_openfiles(struct exe2obj *e2o, char *in, char *out)
         return e2o->fout;
 
     return 0;
-}
-
-static uint32_t e2o_add_name_in_section_table(struct exe2obj *e2o, char *sh_name)
-{
-    GElf_Ehdr ehdr;
-    Elf_Scn *shstrtab;
-    Elf_Data *d;
-
-    if (gelf_getehdr(e2o->eout, &ehdr) == NULL)
-        display_elf_error_and_exit();
-    shstrtab = elf_getscn(e2o->eout, ehdr.e_shstrndx);
-    if (shstrtab == NULL)
-        display_elf_error_and_exit();
-    d = elf_getdata(shstrtab, NULL);
-    if (d == NULL)
-        display_elf_error_and_exit();
-    d->d_buf = realloc(d->d_buf, d->d_size + strlen(sh_name) + 1);
-    memcpy(d->d_buf + d->d_size, sh_name, strlen(sh_name));
-    d->d_size += strlen(sh_name) + 1;
-    *(char *)(d->d_buf + d->d_size - 1) = 0;
-
-    return d->d_size - strlen(sh_name) -1;
-}
-
-static uint32_t e2o_add_name_in_symbol_table(struct exe2obj *e2o, char *name)
-{
-    Elf_Scn *strtab;
-    Elf_Data *d;
-
-    strtab = elf_getscn(e2o->eout, 3/*fixme*/);
-    if (strtab == NULL)
-        display_elf_error_and_exit();
-    d = elf_getdata(strtab, NULL);
-    if (d == NULL)
-        display_elf_error_and_exit();
-    d->d_buf = realloc(d->d_buf, d->d_size + strlen(name) + 1);
-    memcpy(d->d_buf + d->d_size, name, strlen(name));
-    d->d_size += strlen(name) + 1;
-    *(char *)(d->d_buf + d->d_size - 1) = 0;
-
-    return d->d_size - strlen(name) -1;
-}
-
-static void e2o_add_symbol(struct exe2obj *e2o, GElf_Sym *sym)
-{
-    Elf_Scn *symtab;
-    Elf_Data *d;
-    Elf32_Sym sym32;
-
-    sym32.st_name = sym->st_name;
-    sym32.st_value = sym->st_value;
-    sym32.st_size = sym->st_size;
-    sym32.st_info = sym->st_info;
-    sym32.st_other = sym->st_other;
-    sym32.st_shndx = sym->st_shndx;
-
-    symtab = elf_getscn(e2o->eout, 2/*fixme*/);
-    if (symtab == NULL)
-        display_elf_error_and_exit();
-    d = elf_getdata(symtab, NULL);
-    if (d == NULL)
-        display_elf_error_and_exit();
-    d->d_buf = realloc(d->d_buf, d->d_size + gelf_fsize(e2o->eout, ELF_T_SYM, 1, EV_CURRENT));
-    memcpy(d->d_buf + d->d_size, &sym32, gelf_fsize(e2o->eout, ELF_T_SYM, 1, EV_CURRENT));
-    d->d_size += gelf_fsize(e2o->eout, ELF_T_SYM, 1, EV_CURRENT);
 }
 
 static uint16_t e2o_convert_symbol_index(struct exe2obj *e2o, uint16_t shndx_in)
@@ -189,14 +100,14 @@ static void e2o_copy_symbol(struct exe2obj *e2o, GElf_Sym *sym, char *name)
     GElf_Sym s;
     char *prefix_name = append_prefix(config.prefix, name);
 
-    s.st_name = e2o_add_name_in_symbol_table(e2o, prefix_name);
+    s.st_name = e2o_add_name_in_symbol_table(e2o->eout, prefix_name);
     s.st_value = e2o_convert_symbol_address(e2o, sym->st_shndx, sym->st_value);
     s.st_size = sym->st_size;
     s.st_info = sym->st_info;
     s.st_other = sym->st_other;
     s.st_shndx = e2o_convert_symbol_index(e2o, sym->st_shndx);
 
-    e2o_add_symbol(e2o, &s);
+    e2o_add_symbol(e2o->eout, &s);
     free(prefix_name);
 }
 
@@ -265,26 +176,6 @@ static void e2o_gather_input_info(struct exe2obj *e2o)
         display_elf_error_and_exit();
 }
 
-static Elf_Scn * e2o_create_section(Elf *elf, GElf_Shdr *shdr)
-{
-    Elf_Data *d;
-    Elf_Scn *res = elf_newscn(elf);
-
-    /* fail to create section */
-    if (!res)
-        display_elf_error_and_exit();
-
-    if (gelf_update_shdr(res, shdr) == 0)
-        display_elf_error_and_exit();
-
-    /* create empty data content */
-    if ((d = elf_newdata(res)) == NULL)
-        display_elf_error_and_exit();
-    d->d_off = 0;
-
-    return res;
-}
-
 static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *is)
 {
     GElf_Shdr shdr;
@@ -302,7 +193,7 @@ static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *i
         prefix_name = append_prefix(config.prefix, "rodata");
     /* create output section */
     memset(&shdr, 0, sizeof(shdr));
-    shdr.sh_name = e2o_add_name_in_section_table(e2o, prefix_name);
+    shdr.sh_name = e2o_add_name_in_section_table(e2o->eout, prefix_name);
     shdr.sh_type = is->sh_type;
     shdr.sh_flags = is->sh_flags;
     shdr.sh_addralign = is->sh_addralign;
@@ -353,50 +244,6 @@ static void e2o_copy_elf_header(struct exe2obj *e2o)
         display_elf_error_and_exit();
 }
 
-static void e2o_create_section_symbol_table(struct exe2obj *e2o)
-{
-    GElf_Shdr shdr;
-    GElf_Ehdr ehdr;
-
-    if (gelf_getehdr(e2o->eout, &ehdr) == NULL)
-        display_elf_error_and_exit();
-
-    /* create .shstrtab*/
-    memset(&shdr, 0, sizeof(shdr));
-    shdr.sh_name = 1;
-    shdr.sh_type = SHT_STRTAB;
-    ehdr.e_shstrndx = elf_ndxscn( e2o_create_section(e2o->eout, &shdr) );
-
-    if (gelf_update_ehdr(e2o->eout, &ehdr) == 0)
-        display_elf_error_and_exit();
-
-    /* start to add symbol */
-    e2o_add_name_in_section_table(e2o, "");
-    e2o_add_name_in_section_table(e2o, ".shstrtab");
-}
-
-static void e2o_create_symbol_table(struct exe2obj *e2o)
-{
-    GElf_Shdr shdr;
-
-    /* create .symtab */
-    memset(&shdr, 0, sizeof(shdr));
-    shdr.sh_name = e2o_add_name_in_section_table(e2o, ".symtab");
-    shdr.sh_type = SHT_SYMTAB;
-    shdr.sh_entsize = gelf_fsize(e2o->eout, ELF_T_SYM, 1, EV_CURRENT);
-    shdr.sh_link = 3; /* FIXME: value of symtab */
-    e2o_create_section(e2o->eout, &shdr);
-
-    /* create .strtab */
-    memset(&shdr, 0, sizeof(shdr));
-    shdr.sh_name = e2o_add_name_in_section_table(e2o, ".strtab");
-    shdr.sh_type = SHT_STRTAB;
-    e2o_create_section(e2o->eout, &shdr);
-
-    /* start to add symbol */
-    e2o_add_name_in_symbol_table(e2o, "");
-}
-
 static void e2o_add_symbols(struct exe2obj *e2o)
 {
     int i;
@@ -408,7 +255,7 @@ static void e2o_add_symbols(struct exe2obj *e2o)
     sym.st_info = 0;
     sym.st_other = 0;
     sym.st_shndx = 0;
-    e2o_add_symbol(e2o, &sym);
+    e2o_add_symbol(e2o->eout, &sym);
 
     for(i = 0; i < 3; i++) {
         GElf_Shdr sh;
@@ -426,13 +273,13 @@ static void e2o_add_symbols(struct exe2obj *e2o)
         else
             prefix_name = append_prefix(config.prefix, "rodata");
 
-        sym.st_name = e2o_add_name_in_symbol_table(e2o, prefix_name);
+        sym.st_name = e2o_add_name_in_symbol_table(e2o->eout, prefix_name);
         sym.st_value = 0;
         sym.st_size = 0;
         sym.st_info = GELF_ST_INFO(STB_GLOBAL, STT_NOTYPE);
         sym.st_other = 0;
         sym.st_shndx = e2o->oinfo.section_index[i];
-        e2o_add_symbol(e2o, &sym);
+        e2o_add_symbol(e2o->eout, &sym);
         free(prefix_name);
     }
 }
@@ -506,8 +353,8 @@ static int main_options_parsed(int argc, char **argv)
     e2o_elf_begin(&exe2obj);
     e2o_gather_input_info(&exe2obj);
     e2o_copy_elf_header(&exe2obj);
-    e2o_create_section_symbol_table(&exe2obj);
-    e2o_create_symbol_table(&exe2obj);
+    e2o_create_section_symbol_table(exe2obj.eout);
+    e2o_create_symbol_table(exe2obj.eout);
     e2o_copy_sections(&exe2obj);
     e2o_add_symbols(&exe2obj);
     e2o_copy_symbols(&exe2obj);

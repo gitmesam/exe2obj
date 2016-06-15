@@ -4,7 +4,7 @@ STRIP = strip
 DESTDIR ?= /usr/bin
 GIT = git
 
-OBJS = main.o options.o
+OBJS = main.o options.o symbols.o utils.o section.o
 CFLAGS = -g -O2
 
 # Versioning

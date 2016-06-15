@@ -522,15 +522,6 @@ static void e2o_write_out(struct exe2obj *e2o)
 
 static int main_options_parsed(int argc, char **argv)
 {
-    /* if no prefix is given we use a default prefix build on output name */
-    if (!config.prefix && argv[1]) {
-        char *bn = basename(strdup(argv[1]));
-        char *last_dot = rindex(bn, '.');
-
-        if (last_dot)
-            *last_dot = '\0';
-        config.prefix = strcat(bn, "_");
-    }
     assert(elf_version(EV_CURRENT) != EV_NONE);
     assert(e2o_openfiles(&exe2obj, argv[0], argv[1]) == 0);
     e2o_elf_begin(&exe2obj);

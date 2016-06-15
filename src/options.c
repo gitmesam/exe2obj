@@ -111,4 +111,14 @@ void parse_options(int argc, char **argv)
         bad_usage(argv[0]);
         exit(-1);
     }
+
+    /* if no prefix is given we use a default prefix build on output name */
+    if (!config.prefix && argv[optind + 1]) {
+        char *bn = basename(strdup(argv[optind + 1]));
+        char *last_dot = rindex(bn, '.');
+
+        if (last_dot)
+            *last_dot = '\0';
+        config.prefix = strcat(bn, "_");
+    }
 }

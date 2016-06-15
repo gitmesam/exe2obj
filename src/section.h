@@ -26,5 +26,6 @@ Elf_Scn *e2o_create_section(Elf *elf, GElf_Shdr *shdr);
 uint32_t e2o_add_name_in_section_table(Elf *elf, char *sh_name);
 void e2o_create_section_symbol_table(Elf *elf);
 void e2o_create_symbol_table(Elf *elf);
+Elf_Scn *e2o_find_section_by_name(Elf *elf, char *sh_name);
 
 #endif

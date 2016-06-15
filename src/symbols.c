@@ -3,15 +3,16 @@
 
 #include "symbols.h"
 #include "utils.h"
+#include "section.h"
 
 uint32_t e2o_add_name_in_symbol_table(Elf *elf, char *name)
 {
     Elf_Scn *strtab;
     Elf_Data *d;
 
-    strtab = elf_getscn(elf, 2/*fixme*/);
+    strtab = e2o_find_section_by_name(elf, ".strtab");
     if (strtab == NULL)
-        display_elf_error_and_exit();
+        display_error_and_exit("Unable to find .strtab section\n");
     d = elf_getdata(strtab, NULL);
     if (d == NULL)
         display_elf_error_and_exit();
@@ -36,7 +37,9 @@ void e2o_add_symbol(Elf *elf, GElf_Sym *sym)
     sym32.st_other = sym->st_other;
     sym32.st_shndx = sym->st_shndx;
 
-    symtab = elf_getscn(elf, 3/*fixme*/);
+    symtab = e2o_find_section_by_name(elf, ".symtab");
+    if (symtab == NULL)
+        display_error_and_exit("Unable to find .symtab section\n");
     if (symtab == NULL)
         display_elf_error_and_exit();
     d = elf_getdata(symtab, NULL);

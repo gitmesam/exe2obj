@@ -30,6 +30,7 @@ uint32_t e2o_add_name_in_section_table(Elf *elf, char *sh_name)
     GElf_Ehdr ehdr;
     Elf_Scn *shstrtab;
     Elf_Data *d;
+    GElf_Shdr shdr;
 
     if (gelf_getehdr(elf, &ehdr) == NULL)
         display_elf_error_and_exit();
@@ -43,6 +44,14 @@ uint32_t e2o_add_name_in_section_table(Elf *elf, char *sh_name)
     memcpy(d->d_buf + d->d_size, sh_name, strlen(sh_name));
     d->d_size += strlen(sh_name) + 1;
     *(char *)(d->d_buf + d->d_size - 1) = 0;
+
+    /* increment header size so we can find string using elf_strptr() */
+    if (gelf_getshdr(shstrtab, &shdr)) {
+        shdr.sh_size += strlen(sh_name) + 1;
+        if (gelf_update_shdr(shstrtab, &shdr) == 0)
+            display_elf_error_and_exit();
+    } else
+        display_elf_error_and_exit();
 
     return d->d_size - strlen(sh_name) -1;
 }
@@ -90,4 +99,25 @@ void e2o_create_symbol_table(Elf *elf)
 
     /* start to add symbol */
     e2o_add_name_in_symbol_table(elf, "");
+}
+
+Elf_Scn *e2o_find_section_by_name(Elf *elf, char *sh_name)
+{
+    GElf_Shdr shdr;
+    GElf_Ehdr ehdr;
+    Elf_Scn *res = NULL;
+
+    if (!gelf_getehdr(elf, &ehdr))
+        display_elf_error_and_exit();
+
+    while ((res = elf_nextscn(elf, res)) != NULL) {
+        if (gelf_getshdr(res, &shdr)) {
+            char *name = elf_strptr(elf, ehdr.e_shstrndx, shdr.sh_name);
+
+            if (name && strcmp(name, sh_name) == 0)
+                break;
+        }
+    }
+
+    return res;
 }

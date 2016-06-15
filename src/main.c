@@ -265,48 +265,60 @@ static void e2o_gather_input_info(struct exe2obj *e2o)
         display_elf_error_and_exit();
 }
 
-static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *is)
+static Elf_Scn * e2o_create_section(Elf *elf, GElf_Shdr *shdr)
 {
-    Elf_Scn *os = elf_newscn(e2o->eout);
+    Elf_Data *d;
+    Elf_Scn *res = elf_newscn(elf);
 
-    if (os) {
-        GElf_Shdr osh;
-        Elf_Data *id;
-        Elf_Data *od;
-        char *prefix_name;
-
-        /* create header */
-        if (gelf_getshdr(os, &osh) == NULL)
-            display_elf_error_and_exit();
-        osh.sh_type = is->sh_type;
-        osh.sh_flags = is->sh_flags;
-        osh.sh_addralign = is->sh_addralign;
-        if (is->sh_flags & SHF_EXECINSTR)
-            prefix_name = append_prefix(config.prefix, "code");
-        else if (is->sh_flags & SHF_WRITE)
-            prefix_name = append_prefix(config.prefix, "data");
-        else
-            prefix_name = append_prefix(config.prefix, "rodata");
-        osh.sh_name = e2o_add_name_in_section_table(e2o, prefix_name);
-        free(prefix_name);
-        /* copy data */
-        if ((id = elf_getdata(i_scn, NULL)) == 0)
-            display_elf_error_and_exit();
-        if ((od = elf_newdata(os)) == NULL)
-            display_elf_error_and_exit();
-        od->d_align = id->d_align;
-        od->d_off   = id->d_off;
-        od->d_buf   = id->d_buf;
-        od->d_type  = id->d_type;
-        od->d_size  = id->d_size;
-        od->d_version   = id->d_version;
-
-        if (gelf_update_shdr(os, &osh) == 0)
-            display_elf_error_and_exit();
-    } else
+    /* fail to create section */
+    if (!res)
         display_elf_error_and_exit();
 
-    return elf_ndxscn(os);
+    if (gelf_update_shdr(res, shdr) == 0)
+        display_elf_error_and_exit();
+
+    /* create empty data content */
+    if ((d = elf_newdata(res)) == NULL)
+        display_elf_error_and_exit();
+    d->d_off = 0;
+
+    return res;
+}
+
+static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *is)
+{
+    GElf_Shdr shdr;
+    Elf_Scn *o_scn;
+    Elf_Data *id;
+    Elf_Data *od;
+    char *prefix_name;
+
+    /* section name selected according elf flags */
+    if (is->sh_flags & SHF_EXECINSTR)
+        prefix_name = append_prefix(config.prefix, "code");
+    else if (is->sh_flags & SHF_WRITE)
+        prefix_name = append_prefix(config.prefix, "data");
+    else
+        prefix_name = append_prefix(config.prefix, "rodata");
+    /* create output section */
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_name = e2o_add_name_in_section_table(e2o, prefix_name);
+    shdr.sh_type = is->sh_type;
+    shdr.sh_flags = is->sh_flags;
+    shdr.sh_addralign = is->sh_addralign;
+    o_scn = e2o_create_section(e2o->eout, &shdr);
+    free(prefix_name);
+    if (!o_scn)
+        display_elf_error_and_exit();
+
+    /* copy data */
+    if ((id = elf_getdata(i_scn, NULL)) == 0)
+        display_elf_error_and_exit();
+    if ((od = elf_getdata(o_scn, NULL)) == NULL)
+        display_elf_error_and_exit();
+    *od = *id;
+
+    return elf_ndxscn(o_scn);
 }
 
 static void e2o_copy_sections(struct exe2obj *e2o)
@@ -343,31 +355,20 @@ static void e2o_copy_elf_header(struct exe2obj *e2o)
 
 static void e2o_create_section_symbol_table(struct exe2obj *e2o)
 {
+    GElf_Shdr shdr;
     GElf_Ehdr ehdr;
-    Elf_Scn *shstrtab;
-    GElf_Shdr shstrtab_sh;
-    Elf_Data *d;
 
     if (gelf_getehdr(e2o->eout, &ehdr) == NULL)
         display_elf_error_and_exit();
-    shstrtab = elf_newscn(e2o->eout);
-    if(!shstrtab)
-        display_elf_error_and_exit();
-    ehdr.e_shstrndx = elf_ndxscn(shstrtab);
+
+    /* create .shstrtab*/
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_name = 1;
+    shdr.sh_type = SHT_STRTAB;
+    ehdr.e_shstrndx = elf_ndxscn( e2o_create_section(e2o->eout, &shdr) );
+
     if (gelf_update_ehdr(e2o->eout, &ehdr) == 0)
         display_elf_error_and_exit();
-    if (gelf_getshdr(shstrtab, &shstrtab_sh) == NULL)
-        display_elf_error_and_exit();
-    shstrtab_sh.sh_name = 1;
-    shstrtab_sh.sh_type = SHT_STRTAB;
-
-    if (gelf_update_shdr(shstrtab, &shstrtab_sh) == 0)
-        display_elf_error_and_exit();
-
-    /* create data content */
-    if ((d = elf_newdata(shstrtab)) == NULL)
-        display_elf_error_and_exit();
-    d->d_off = 0;
 
     /* start to add symbol */
     e2o_add_name_in_section_table(e2o, "");
@@ -376,43 +377,21 @@ static void e2o_create_section_symbol_table(struct exe2obj *e2o)
 
 static void e2o_create_symbol_table(struct exe2obj *e2o)
 {
-    Elf_Scn *symtab;
-    GElf_Shdr symtab_sh;
-    Elf_Scn *strtab;
-    GElf_Shdr strtab_sh;
-    Elf_Data *d;
+    GElf_Shdr shdr;
 
-    symtab = elf_newscn(e2o->eout);
-    if(!symtab)
-        display_elf_error_and_exit();
-    if (gelf_getshdr(symtab, &symtab_sh) == NULL)
-        display_elf_error_and_exit();
-    symtab_sh.sh_name = e2o_add_name_in_section_table(e2o, ".symtab");
-    symtab_sh.sh_type = SHT_SYMTAB;
-    symtab_sh.sh_entsize = gelf_fsize(e2o->eout, ELF_T_SYM, 1, EV_CURRENT);
-    symtab_sh.sh_link = 3; /* FIXME: value of symtab */
-    if (gelf_update_shdr(symtab, &symtab_sh) == 0)
-        display_elf_error_and_exit();
+    /* create .symtab */
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_name = e2o_add_name_in_section_table(e2o, ".symtab");
+    shdr.sh_type = SHT_SYMTAB;
+    shdr.sh_entsize = gelf_fsize(e2o->eout, ELF_T_SYM, 1, EV_CURRENT);
+    shdr.sh_link = 3; /* FIXME: value of symtab */
+    e2o_create_section(e2o->eout, &shdr);
 
-    /* create data content */
-    if ((d = elf_newdata(symtab)) == NULL)
-        display_elf_error_and_exit();
-    d->d_off = 0;
-
-    strtab = elf_newscn(e2o->eout);
-    if(!strtab)
-        display_elf_error_and_exit();
-    if (gelf_getshdr(strtab, &strtab_sh) == NULL)
-        display_elf_error_and_exit();
-    strtab_sh.sh_name = e2o_add_name_in_section_table(e2o, ".strtab");
-    strtab_sh.sh_type = SHT_STRTAB;
-    if (gelf_update_shdr(strtab, &strtab_sh) == 0)
-        display_elf_error_and_exit();
-
-    /* create data content */
-    if ((d = elf_newdata(strtab)) == NULL)
-        display_elf_error_and_exit();
-    d->d_off = 0;
+    /* create .strtab */
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_name = e2o_add_name_in_section_table(e2o, ".strtab");
+    shdr.sh_type = SHT_STRTAB;
+    e2o_create_section(e2o->eout, &shdr);
 
     /* start to add symbol */
     e2o_add_name_in_symbol_table(e2o, "");

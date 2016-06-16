@@ -94,32 +94,18 @@ static GElf_Addr e2o_convert_symbol_address(struct exe2obj *e2o, uint16_t shndx_
     return addr_in;
 }
 
-static void e2o_copy_symbol(struct exe2obj *e2o, GElf_Sym *sym, char *name)
+static char *flags_to_name(uint64_t flags)
 {
-    uint32_t index;
-    GElf_Sym s;
-    char *prefix_name = append_prefix(config.prefix, name);
+    char *res = NULL;
 
-    s.st_name = e2o_add_name_in_symbol_table(e2o->eout, prefix_name);
-    s.st_value = e2o_convert_symbol_address(e2o, sym->st_shndx, sym->st_value);
-    s.st_size = sym->st_size;
-    s.st_info = sym->st_info;
-    s.st_other = sym->st_other;
-    s.st_shndx = e2o_convert_symbol_index(e2o, sym->st_shndx);
+    if (flags & SHF_EXECINSTR)
+        res = append_prefix(config.prefix, "code");
+    else if (flags & SHF_WRITE)
+        res = append_prefix(config.prefix, "data");
+    else
+        res = append_prefix(config.prefix, "rodata");
 
-    e2o_add_symbol(e2o->eout, &s);
-    free(prefix_name);
-}
-
-static void e2o_elf_begin(struct exe2obj *e2o)
-{
-    e2o->ein = elf_begin(e2o->fin, ELF_C_READ, NULL);
-    if (!e2o->ein)
-        display_elf_error_and_exit();
-
-    e2o->eout = elf_begin(e2o->fout, ELF_C_WRITE, NULL);
-    if (!e2o->eout)
-        display_elf_error_and_exit();
+    return res;
 }
 
 static int is_section_belong_to_segment(GElf_Phdr *ph, GElf_Shdr *sh)
@@ -139,6 +125,18 @@ static int is_section_belong_to_segment(GElf_Phdr *ph, GElf_Shdr *sh)
     return 0;
 }
 
+static void e2o_elf_begin(struct exe2obj *e2o)
+{
+    e2o->ein = elf_begin(e2o->fin, ELF_C_READ, NULL);
+    if (!e2o->ein)
+        display_elf_error_and_exit();
+
+    e2o->eout = elf_begin(e2o->fout, ELF_C_WRITE, NULL);
+    if (!e2o->eout)
+        display_elf_error_and_exit();
+}
+
+/* We expect to have 3 segments and one and only one section in each segment */
 static void e2o_gather_input_info(struct exe2obj *e2o)
 {
     GElf_Ehdr * ehdr = gelf_getehdr(e2o->ein, &e2o->iinfo.ehdr);
@@ -176,57 +174,8 @@ static void e2o_gather_input_info(struct exe2obj *e2o)
         display_elf_error_and_exit();
 }
 
-static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *is)
-{
-    GElf_Shdr shdr;
-    Elf_Scn *o_scn;
-    Elf_Data *id;
-    Elf_Data *od;
-    char *prefix_name;
-
-    /* section name selected according elf flags */
-    if (is->sh_flags & SHF_EXECINSTR)
-        prefix_name = append_prefix(config.prefix, "code");
-    else if (is->sh_flags & SHF_WRITE)
-        prefix_name = append_prefix(config.prefix, "data");
-    else
-        prefix_name = append_prefix(config.prefix, "rodata");
-    /* create output section */
-    memset(&shdr, 0, sizeof(shdr));
-    shdr.sh_name = e2o_add_name_in_section_table(e2o->eout, prefix_name);
-    shdr.sh_type = is->sh_type;
-    shdr.sh_flags = is->sh_flags;
-    shdr.sh_addralign = is->sh_addralign;
-    o_scn = e2o_create_section(e2o->eout, &shdr);
-    free(prefix_name);
-    if (!o_scn)
-        display_elf_error_and_exit();
-
-    /* copy data */
-    if ((id = elf_getdata(i_scn, NULL)) == 0)
-        display_elf_error_and_exit();
-    if ((od = elf_getdata(o_scn, NULL)) == NULL)
-        display_elf_error_and_exit();
-    *od = *id;
-
-    return elf_ndxscn(o_scn);
-}
-
-static void e2o_copy_sections(struct exe2obj *e2o)
-{
-    GElf_Phdr phdr;
-    int i;
-
-    for(i = 0; i < 3; i++) {
-        if (e2o->iinfo.section_to_copy[i]) {
-            GElf_Shdr ish;
-
-            gelf_getshdr(e2o->iinfo.section_to_copy[i], &ish);
-            e2o->oinfo.section_index[i] = e2o_copy_section(e2o, e2o->iinfo.section_to_copy[i], &ish);
-        }
-    }
-}
-
+/* create and setup output file elf header. We declare output as being a
+   relocatable object and not an executable. */
 static void e2o_copy_elf_header(struct exe2obj *e2o)
 {
     GElf_Ehdr ehdr;
@@ -244,6 +193,57 @@ static void e2o_copy_elf_header(struct exe2obj *e2o)
         display_elf_error_and_exit();
 }
 
+static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *is)
+{
+    GElf_Shdr shdr;
+    Elf_Scn *o_scn;
+    Elf_Data *id;
+    Elf_Data *od;
+    char *prefix_name;
+
+    /* section name selected according elf flags */
+    prefix_name = flags_to_name(is->sh_flags);
+    /* create output section */
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_name = e2o_add_name_in_section_table(e2o->eout, prefix_name);
+    shdr.sh_type = is->sh_type;
+    shdr.sh_flags = is->sh_flags;
+    shdr.sh_addralign = is->sh_addralign;
+    o_scn = e2o_create_section(e2o->eout, &shdr);
+    free(prefix_name);
+    if (!o_scn)
+        display_elf_error_and_exit();
+
+    /* copy content */
+    if ((id = elf_getdata(i_scn, NULL)) == 0)
+        display_elf_error_and_exit();
+    if ((od = elf_getdata(o_scn, NULL)) == NULL)
+        display_elf_error_and_exit();
+    *od = *id;
+
+    return elf_ndxscn(o_scn);
+}
+
+/* copy the 3 sections we are interested in. Rename them with ${prefix}_[code|data|rodata] */
+static void e2o_copy_sections(struct exe2obj *e2o)
+{
+    GElf_Phdr phdr;
+    int i;
+
+    for(i = 0; i < 3; i++) {
+        if (e2o->iinfo.section_to_copy[i]) {
+            GElf_Shdr ish;
+
+            gelf_getshdr(e2o->iinfo.section_to_copy[i], &ish);
+            e2o->oinfo.section_index[i] = e2o_copy_section(e2o, e2o->iinfo.section_to_copy[i], &ish);
+        }
+    }
+}
+
+/* Create 4 symbols :
+    - empty one
+    - one located at start of each of the three section.
+*/
 static void e2o_add_symbols(struct exe2obj *e2o)
 {
     int i;
@@ -266,13 +266,7 @@ static void e2o_add_symbols(struct exe2obj *e2o)
             display_elf_error_and_exit();
         if (!gelf_getshdr(s, &sh))
             display_elf_error_and_exit();
-        if (sh.sh_flags & SHF_EXECINSTR)
-            prefix_name = append_prefix(config.prefix, "code");
-        else if (sh.sh_flags & SHF_WRITE)
-            prefix_name = append_prefix(config.prefix, "data");
-        else
-            prefix_name = append_prefix(config.prefix, "rodata");
-
+        prefix_name = flags_to_name(sh.sh_flags);
         sym.st_name = e2o_add_name_in_symbol_table(e2o->eout, prefix_name);
         sym.st_value = 0;
         sym.st_size = 0;
@@ -284,12 +278,32 @@ static void e2o_add_symbols(struct exe2obj *e2o)
     }
 }
 
+/* copy one symbol from input file to output file. We need to adjust address,
+   section index and we add a prefix to the name .*/
+static void e2o_copy_symbol(struct exe2obj *e2o, GElf_Sym *sym, char *name)
+{
+    uint32_t index;
+    GElf_Sym s;
+    char *prefix_name = append_prefix(config.prefix, name);
+
+    s.st_name = e2o_add_name_in_symbol_table(e2o->eout, prefix_name);
+    s.st_value = e2o_convert_symbol_address(e2o, sym->st_shndx, sym->st_value);
+    s.st_size = sym->st_size;
+    s.st_info = sym->st_info;
+    s.st_other = sym->st_other;
+    s.st_shndx = e2o_convert_symbol_index(e2o, sym->st_shndx);
+
+    e2o_add_symbol(e2o->eout, &s);
+    free(prefix_name);
+}
+
+/* copy symbols from input to output. Only golbal symbols which have a type
+   will be copied. */
 static void e2o_copy_symbols(struct exe2obj *e2o)
 {
     Elf_Scn *symtab_in;
     GElf_Shdr symtab_sh;
     Elf_Scn *strtab_in;
-    GElf_Shdr strtab_sh;
     size_t strtab_idx;
     uint64_t sym_nb;
     Elf_Data *d;
@@ -297,31 +311,17 @@ static void e2o_copy_symbols(struct exe2obj *e2o)
     int i;
 
     /* find strtab index */
-    strtab_in = NULL;
-    while ((strtab_in = elf_nextscn(e2o->ein, strtab_in)) != NULL) {
-        if (gelf_getshdr(strtab_in, &strtab_sh) == NULL)
-            display_elf_error_and_exit();
-        /* find by name */
-        name = elf_strptr(e2o->ein, e2o->iinfo.ehdr.e_shstrndx, strtab_sh.sh_name);
-        if (name && strcmp(name, ".strtab") == 0)
-            break;
-    }
+    strtab_in = e2o_find_section_by_name(e2o->ein, ".strtab");
     if (!strtab_in)
         display_error_and_exit("uname to find .strtab in input file");
     strtab_idx = elf_ndxscn(strtab_in);
 
     /* find input symbol table */
-    symtab_in = NULL;
-    while ((symtab_in = elf_nextscn(e2o->ein, symtab_in)) != NULL) {
-        if (gelf_getshdr(symtab_in, &symtab_sh) == NULL)
-            display_elf_error_and_exit();
-        /* find by name */
-        name = elf_strptr(e2o->ein, e2o->iinfo.ehdr.e_shstrndx, symtab_sh.sh_name);
-        if (name && strcmp(name, ".symtab") == 0)
-            break;
-    }
+    symtab_in = e2o_find_section_by_name(e2o->ein, ".symtab");
     if (!symtab_in)
         display_error_and_exit("uname to find .symtab in input file");
+    if (gelf_getshdr(symtab_in, &symtab_sh) == NULL)
+        display_elf_error_and_exit();
     sym_nb = symtab_sh.sh_size / symtab_sh.sh_entsize;
     d = elf_getdata(symtab_in, NULL);
     if (d == NULL)

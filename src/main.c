@@ -339,6 +339,55 @@ static void e2o_copy_symbols(struct exe2obj *e2o)
     }
 }
 
+static void e2o_append_one_comment_line(Elf_Scn *scn, char *comment)
+{
+    Elf_Data *d;
+
+    d = elf_getdata(scn, NULL);
+    if (d == NULL)
+        display_elf_error_and_exit();
+    d->d_buf = realloc(d->d_buf, d->d_size + strlen(comment) + 1);
+    memcpy(d->d_buf + d->d_size, comment, strlen(comment));
+    d->d_size += strlen(comment) + 1;
+    *(char *)(d->d_buf + d->d_size - 1) = 0;
+}
+
+static void e2o_add_comment_section(struct exe2obj *e2o, int argc, char **argv)
+{
+    GElf_Shdr shdr;
+    Elf_Scn *scn;
+    char *buf;
+    char *buf_r;
+    int i;
+    int size = 0;
+
+    /* first create section */
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_name = e2o_add_name_in_section_table(e2o->eout, ".comment");
+    shdr.sh_type = SHT_PROGBITS;
+    scn = e2o_create_section(e2o->eout, &shdr);
+    /* add a first line that contains program name and version number */
+    size = strlen("exe2obj") + 1 + strlen(GIT_VERSION) + 1;
+    buf = malloc(size);
+    assert(buf);
+    sprintf(buf, "exe2obj " GIT_VERSION);
+    assert(strlen(buf) + 1 == size);
+    e2o_append_one_comment_line(scn, buf);
+    free(buf);
+    /* add a second line that contains command line arguments */
+    size = 0;
+    for(i = 1; i < argc; i++)
+        size += strlen(argv[i]) + 1;
+    buf = malloc(size);
+    assert(buf);
+    buf_r = buf;
+    for(i = 1; i < argc; i++)
+        buf_r += sprintf(buf_r, (i == argc -1) ? "%s" : "%s ", argv[i]);
+    assert(strlen(buf) + 1 == size);
+    e2o_append_one_comment_line(scn, buf);
+    free(buf);
+}
+
 static void e2o_write_out(struct exe2obj *e2o)
 {
     if (elf_update(e2o->eout, ELF_C_WRITE) < 0) {
@@ -346,7 +395,7 @@ static void e2o_write_out(struct exe2obj *e2o)
     }
 }
 
-static int main_options_parsed(int argc, char **argv)
+static int main_options_parsed(int argc, char **argv, int argc_orig, char **argv_orig)
 {
     assert(elf_version(EV_CURRENT) != EV_NONE);
     assert(e2o_openfiles(&exe2obj, argv[0], argv[1]) == 0);
@@ -358,6 +407,7 @@ static int main_options_parsed(int argc, char **argv)
     e2o_copy_sections(&exe2obj);
     e2o_add_symbols(&exe2obj);
     e2o_copy_symbols(&exe2obj);
+    e2o_add_comment_section(&exe2obj, argc_orig, argv_orig);
 
     e2o_write_out(&exe2obj);
 
@@ -369,5 +419,5 @@ int main(int argc, char **argv)
     /* parse options */
     parse_options(argc, argv);
 
-    return main_options_parsed(argc - optind, argv + optind);
+    return main_options_parsed(argc - optind, argv + optind, argc, argv);
 }

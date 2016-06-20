@@ -224,6 +224,25 @@ static size_t e2o_copy_section(struct exe2obj *e2o, Elf_Scn *i_scn, GElf_Shdr *i
     return elf_ndxscn(o_scn);
 }
 
+static size_t eo2_create_empty_rodata_section(struct exe2obj *e2o)
+{
+    GElf_Shdr shdr;
+    Elf_Scn *o_scn;
+    char *prefix_name = flags_to_name(SHF_ALLOC);
+
+    memset(&shdr, 0, sizeof(shdr));
+    shdr.sh_name = e2o_add_name_in_section_table(e2o->eout, prefix_name);
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_ALLOC;
+    shdr.sh_addralign = 1;
+    o_scn = e2o_create_section(e2o->eout, &shdr);
+    free(prefix_name);
+    if (!o_scn)
+        display_elf_error_and_exit();
+
+    return elf_ndxscn(o_scn);
+}
+
 /* copy the 3 sections we are interested in. Rename them with ${prefix}_[code|data|rodata] */
 static void e2o_copy_sections(struct exe2obj *e2o)
 {
@@ -236,7 +255,8 @@ static void e2o_copy_sections(struct exe2obj *e2o)
 
             gelf_getshdr(e2o->iinfo.section_to_copy[i], &ish);
             e2o->oinfo.section_index[i] = e2o_copy_section(e2o, e2o->iinfo.section_to_copy[i], &ish);
-        }
+        } else
+            e2o->oinfo.section_index[i] = eo2_create_empty_rodata_section(e2o);
     }
 }
 

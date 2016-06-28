@@ -355,7 +355,8 @@ static void e2o_copy_symbols(struct exe2obj *e2o)
             display_elf_error_and_exit();
 
         if (GELF_ST_BIND(sym.st_info) == STB_GLOBAL && GELF_ST_TYPE(sym.st_info) != STT_NOTYPE)
-            e2o_copy_symbol(e2o, &sym, elf_strptr(e2o->ein, strtab_idx, sym.st_name));
+            if (config.no_hide || GELF_ST_VISIBILITY(sym.st_other) == STV_DEFAULT)
+                e2o_copy_symbol(e2o, &sym, elf_strptr(e2o->ein, strtab_idx, sym.st_name));
     }
 }
 

@@ -24,6 +24,7 @@
 struct config {
     char *prefix;
     int is_verbose;
+    int no_hide;
 };
 
 extern struct config config;

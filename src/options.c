@@ -35,6 +35,7 @@
 struct config config;
 static struct option long_options[] = {
     {"prefix",              required_argument, NULL, 'p'},
+    {"no-hide",             no_argument, NULL, 'n'},
     {"help",                no_argument, NULL, 'h'},
     {"verbose",             no_argument, NULL, 'v'},
     {"version",             no_argument, NULL, 'V'},
@@ -54,6 +55,8 @@ static void set_prefix(char *prefix)
     config.prefix = strcat(config.prefix, "_");
 }
 
+const char no_hide_usage[] = "\
+  -n, --no-hide                     Also copy symbols with non default visibility\n";
 const char prefix_usage[] = "\
   -p, --prefix [PREFIX]             prepend PREFIX_ to all exported symbols\n";
 const char help_usage[] = "\
@@ -64,6 +67,7 @@ const char version_usage[] = "\
 static void print_usage(char *name)
 {
     fprintf(stderr, "Usage: %s [OPTION] ... INPUT_FILE OUTPUT_FILE\n\n", name);
+    fprintf(stderr, no_hide_usage);
     fprintf(stderr, prefix_usage);
     fprintf(stderr, help_usage);
     fprintf(stderr, version_usage);
@@ -85,7 +89,7 @@ void parse_options(int argc, char **argv)
     int opt;
 
     setup_default_config(&config);
-    while((opt = getopt_long(argc, argv, "+p:hvV", long_options, NULL)) != -1) {
+    while((opt = getopt_long(argc, argv, "+p:nhvV", long_options, NULL)) != -1) {
         switch(opt) {
             case 'p':
                 set_prefix(optarg);
@@ -100,6 +104,9 @@ void parse_options(int argc, char **argv)
             case 'V':
                 print_version();
                 exit(0);
+                break;
+            case 'n':
+                config.no_hide = 1;
                 break;
             default:
                 bad_usage(argv[0]);

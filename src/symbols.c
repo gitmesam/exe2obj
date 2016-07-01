@@ -5,6 +5,18 @@
 #include "utils.h"
 #include "section.h"
 
+static char *e2o_find_symbol_name(Elf *elf, uint32_t st_name)
+{
+    Elf_Scn *strtab;
+    Elf_Data *d;
+
+    d = e2o_find_section_data_by_name(elf, ".strtab");
+    if (d == NULL)
+        display_elf_error_and_exit();
+
+    return st_name >= d->d_size ? NULL : d->d_buf + st_name;
+}
+
 uint32_t e2o_add_name_in_symbol_table(Elf *elf, char *name)
 {
     Elf_Scn *strtab;
@@ -48,4 +60,27 @@ void e2o_add_symbol(Elf *elf, GElf_Sym *sym)
     d->d_buf = realloc(d->d_buf, d->d_size + gelf_fsize(elf, ELF_T_SYM, 1, EV_CURRENT));
     memcpy(d->d_buf + d->d_size, &sym32, gelf_fsize(elf, ELF_T_SYM, 1, EV_CURRENT));
     d->d_size += gelf_fsize(elf, ELF_T_SYM, 1, EV_CURRENT);
+}
+
+size_t e2o_find_symbol_index_by_name(Elf *elf, char *name)
+{
+    Elf_Data *d;
+    Elf32_Sym *sym;
+    int ndx = 0;
+
+    d = e2o_find_section_data_by_name(elf, ".symtab");
+    if (d == NULL)
+        display_elf_error_and_exit();
+
+    sym = d->d_buf;
+    while(sym < (Elf32_Sym *)(d->d_buf + d->d_size)) {
+        char *name_strtab = e2o_find_symbol_name(elf, sym->st_name);
+
+        if (name_strtab && strcmp(name, name_strtab) == 0)
+            return ndx;
+        ndx++;
+        sym++;
+    }
+
+    return 0;
 }

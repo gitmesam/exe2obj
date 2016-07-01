@@ -24,5 +24,6 @@
 
 uint32_t e2o_add_name_in_symbol_table(Elf *elf, char *name);
 void e2o_add_symbol(Elf *elf, GElf_Sym *sym);
+size_t e2o_find_symbol_index_by_name(Elf *elf, char *name);
 
 #endif

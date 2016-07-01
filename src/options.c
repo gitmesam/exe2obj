@@ -36,6 +36,7 @@ struct config config;
 static struct option long_options[] = {
     {"prefix",              required_argument, NULL, 'p'},
     {"no-hide",             no_argument, NULL, 'n'},
+    {"stub",                no_argument, NULL, 's'},
     {"help",                no_argument, NULL, 'h'},
     {"verbose",             no_argument, NULL, 'v'},
     {"version",             no_argument, NULL, 'V'},
@@ -57,8 +58,10 @@ static void set_prefix(char *prefix)
 
 const char no_hide_usage[] = "\
   -n, --no-hide                     Also copy symbols with non default visibility\n";
+const char stub_usage[] = "\
+  -n, --stub                        Automatically generate stub code using .stub.info section information\n";
 const char prefix_usage[] = "\
-  -p, --prefix [PREFIX]             prepend PREFIX_ to all exported symbols\n";
+  -p, --prefix [PREFIX]             Prepend PREFIX_ to all exported symbols\n";
 const char help_usage[] = "\
   -h, --help                        Print the help message, then exit\n";
 const char version_usage[] = "\
@@ -68,6 +71,7 @@ static void print_usage(char *name)
 {
     fprintf(stderr, "Usage: %s [OPTION] ... INPUT_FILE OUTPUT_FILE\n\n", name);
     fprintf(stderr, no_hide_usage);
+    fprintf(stderr, stub_usage);
     fprintf(stderr, prefix_usage);
     fprintf(stderr, help_usage);
     fprintf(stderr, version_usage);
@@ -107,6 +111,9 @@ void parse_options(int argc, char **argv)
                 break;
             case 'n':
                 config.no_hide = 1;
+                break;
+            case 's':
+                config.stub = 1;
                 break;
             default:
                 bad_usage(argv[0]);

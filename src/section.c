@@ -121,3 +121,13 @@ Elf_Scn *e2o_find_section_by_name(Elf *elf, char *sh_name)
 
     return res;
 }
+
+Elf_Data *e2o_find_section_data_by_name(Elf *elf, char *sh_name)
+{
+    Elf_Scn *scn = e2o_find_section_by_name(elf, sh_name);
+
+    if (scn)
+        return elf_getdata(scn, NULL);
+
+    return NULL;
+}

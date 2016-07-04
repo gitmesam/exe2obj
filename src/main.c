@@ -70,12 +70,16 @@ struct exe2obj exe2obj;
 static int e2o_openfiles(struct exe2obj *e2o, char *in, char *out)
 {
     e2o->fin = open(in, O_RDONLY);
-    if (e2o->fin < 0)
+    if (e2o->fin < 0) {
+        fprintf(stderr, "Unable to open %s\n", in);
         return e2o->fin;
+    }
 
     e2o->fout = open(out, O_WRONLY | O_CREAT, S_IRWXU);
-    if (e2o->fout < 0)
+    if (e2o->fout < 0) {
+        fprintf(stderr, "Unable to create %s\n", out);
         return e2o->fout;
+    }
 
     return 0;
 }
@@ -154,7 +158,7 @@ static void e2o_gather_input_info(struct exe2obj *e2o)
 
     if (ehdr) {
         if (ehdr->e_phnum > 3)
-            display_error_and_exit("More than 3 segments in input file\n");
+            display_error_and_exit("More than 3 segments in input file. Please use asset.ld link script.\n");
         for(i = 0; i < ehdr->e_phnum; i++) {
             GElf_Phdr phdr;
 
@@ -174,7 +178,7 @@ static void e2o_gather_input_info(struct exe2obj *e2o)
                     } else
                         display_elf_error_and_exit();
                 if (section_counter > 1)
-                    display_error_and_exit("More that one section in segment\n");
+                    display_error_and_exit("More that one section in segment. You certainly try to link with code not build with -masset option.\n");
                 }
             } else
                 display_elf_error_and_exit();
@@ -343,13 +347,13 @@ static void e2o_copy_symbols(struct exe2obj *e2o)
     /* find strtab index */
     strtab_in = e2o_find_section_by_name(e2o->ein, ".strtab");
     if (!strtab_in)
-        display_error_and_exit("uname to find .strtab in input file");
+        display_error_and_exit("unable to find .strtab in input file");
     strtab_idx = elf_ndxscn(strtab_in);
 
     /* find input symbol table */
     symtab_in = e2o_find_section_by_name(e2o->ein, ".symtab");
     if (!symtab_in)
-        display_error_and_exit("uname to find .symtab in input file");
+        display_error_and_exit("unable to find .symtab in input file");
     if (gelf_getshdr(symtab_in, &symtab_sh) == NULL)
         display_elf_error_and_exit();
     sym_nb = symtab_sh.sh_size / symtab_sh.sh_entsize;
@@ -625,7 +629,8 @@ static void e2o_add_stub_code(struct exe2obj *e2o)
 static int main_options_parsed(int argc, char **argv, int argc_orig, char **argv_orig)
 {
     assert(elf_version(EV_CURRENT) != EV_NONE);
-    assert(e2o_openfiles(&exe2obj, argv[0], argv[1]) == 0);
+    if (e2o_openfiles(&exe2obj, argv[0], argv[1]))
+        exit(-1);
     e2o_elf_begin(&exe2obj);
     e2o_gather_input_info(&exe2obj);
     e2o_copy_elf_header(&exe2obj);

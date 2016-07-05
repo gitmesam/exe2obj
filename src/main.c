@@ -113,11 +113,11 @@ static char *flags_to_name(uint64_t flags)
     char *res = NULL;
 
     if (flags & SHF_EXECINSTR)
-        res = append_prefix(config.prefix, "code");
+        res = append_prefix(config.prefix, "code_asset");
     else if (flags & SHF_WRITE)
-        res = append_prefix(config.prefix, "data");
+        res = append_prefix(config.prefix, "data_asset");
     else
-        res = append_prefix(config.prefix, "rodata");
+        res = append_prefix(config.prefix, "rodata_asset");
 
     return res;
 }
